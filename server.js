@@ -1,95 +1,68 @@
-// Require Dependencies
 const express = require("express");
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
 const util = require("util");
-
-// Express App and PORT
+const uniqid = require("uniqid");
 const app = express();
-const PORT = process.env.PORT;
 
-// Express Middleware Functions
+const fsReadFileAsync = util.promisify(fs.readFile);
+const fsWriteFileAsync = util.promisify(fs.writeFile);
+
+const PORT = process.env.PORT || 8080;
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static("public"));
 
-const readFileAsync = util.promisify(fs.readFile);
-const writeFileAsync = util.promisify(fs.writeFile);
+app.use(express.static(path.join(__dirname, "assets")));
 
-// HTML Routes - notes.html and index.html
-app.get("/notes", (req, res) => {
-    res.sendFile(path.join(__dirname, "/public/notes.html"));
-})
+app.get('/notes', (req, res) => {
+    res.sendFile(path.join(__dirname, "notes.html"));
+});
 
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "/public/index.html"));
-})
 
-// GET /api/notes Route - reads db.json file and returns the data array of objects in JSON format
 app.get("/api/notes", (req, res) => {
-    readFileAsync("./db/db.json", "utf-8")
-        .then(data => {
-            res.json(JSON.parse(data));
-        })
-        .catch(err => {
-            throw err;
-        })
+    fs.readFile(path.join(__dirname, "db.json"), "utf-8", (error, data) => {
+        if(error) {
+            console.log(error);
+        }
+        //sending as an object
+        res.json(JSON.parse(data));
+    })
 });
 
-
-// POST /api/notes - creates a new object based on user input and adds it to db.json in JSON format 
 app.post("/api/notes", async (req, res) => {
+    const note = req.body;
+    note.id = uniqid();
     try {
-        const data = await readFileAsync("./db/db.json", "utf-8"); 
-
-        const notes = JSON.parse(data);
-
-        const newNote = req.body;
-        const newNoteId = notes.length + 1;
-        const noteData = {
-            id: newNoteId,
-            title: newNote.title,
-            text: newNote.text
-        };
-    
-        notes.push(noteData);
-        res.json(noteData);
-        console.log(noteData);
-    
-        await writeFileAsync("./db/db.json", JSON.stringify(notes, null, 2));
-        console.log("note created!");
-    } catch (err) {
-        throw err;
+        const newNote = await fsReadFileAsync(path.join(__dirname, "db.json"), "utf-8");
+        const parsedNote = JSON.parse(newNote);
+        parsedNote.push(note);
+        //stringify array to be save back in the json file
+        await fsWriteFileAsync(path.join(__dirname, "db.json"), JSON.stringify(parsedNote));
+        res.json(parsedNote); 
+    } catch (error) {
+        console.log(error);
     }
 });
 
-// DELETE /api/notes/:id - deletes the note object based on specific id and returns the rewritten db.json in JSON format
-app.delete("/api/notes/:id", async (req, res) => {
+app.delete('/api/notes/:id', async (req, res) => {
+    const id = req.params.id;
     try {
-        const noteID = req.params.id;
-
-        const data = await readFileAsync("./db/db.json", "utf-8");
-
-        const notes = JSON.parse(data);
-
-        notes.forEach((element, index) => {
-            if (parseInt(element.id) === parseInt(noteID)) {
-                notes.splice(index, 1);
-            }
-        });
-
-        const notesSTR = JSON.stringify(notes, null, 2);
-
-        await writeFileAsync("./db/db.json", notesSTR);
-
-        res.json(JSON.parse(notesSTR));
-        console.log("note deleted!");
-    } catch (err) {
-        throw err;
+        const readNotes = await fsReadFileAsync(path.join(__dirname, "db.json"), "utf-8");
+        const parsedRead = JSON.parse(readNotes);
+        const newNotes = parsedRead.filter(val => val.id !== id);
+        //write json data back to file
+        await fsWriteFileAsync(path.join(__dirname, "db.json"), JSON.stringify(newNotes));
+        res.json(newNotes);  
+    } catch (error) {
+        console.log(error);
     }
 })
 
-// Server Port LISTEN
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+})
+
 app.listen(PORT, () => {
-    console.log(`App listening on PORT: ${PORT}`);
-});
+    console.log("Server listening on port%s", PORT);
+})
